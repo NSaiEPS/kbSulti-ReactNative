@@ -100,7 +100,7 @@ function AppContent() {
       console.log('PDF Save Error:', error);
     }
   };
-  const saveExcel = async (base64Data, fileName) => {
+  const saveExcel1 = async (base64Data, fileName) => {
     try {
       const { fs, android } = ReactNativeBlobUtil;
 
@@ -127,6 +127,28 @@ function AppContent() {
     }
   };
 
+  const saveExcel = async (base64Data, fileName) => {
+    try {
+      console.log('Excel base64 length:', base64Data.length);
+      const { fs, android } = ReactNativeBlobUtil;
+
+      const pureBase64 = base64Data.replace(/^data:.*;base64,/, '');
+
+      const path = `${fs.dirs.DownloadDir}/${fileName}`;
+
+      await fs.writeFile(path, pureBase64, 'base64');
+
+      console.log('Excel saved at:', path);
+
+      android.actionViewIntent(
+        path,
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      );
+    } catch (error) {
+      console.log('Excel Save Error:', error);
+    }
+  };
+
   return (
     <View style={[styles.container, { paddingTop: safeAreaInsets.top }]}>
       <WebView
@@ -138,12 +160,14 @@ function AppContent() {
           downloadPDF(nativeEvent.downloadUrl);
         }}
         onMessage={event => {
+          console.log(event, 'ddd');
           const msg = JSON.parse(event.nativeEvent.data);
 
           if (msg.type === 'PDF_BASE64') {
             savePdf(msg.data, msg.fileName);
           }
           if (msg.type === 'EXCEL_BASE64') {
+            console.log(msg.fileName, msg.data, 'excel');
             saveExcel(msg.data, msg.fileName);
           }
         }}
