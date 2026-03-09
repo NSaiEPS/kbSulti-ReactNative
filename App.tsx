@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
   Linking,
   StatusBar,
@@ -8,6 +8,7 @@ import {
   Platform,
   PermissionsAndroid,
   Alert,
+  BackHandler,
 } from 'react-native';
 import {
   SafeAreaProvider,
@@ -68,6 +69,23 @@ function App() {
 
 function AppContent() {
   const safeAreaInsets = useSafeAreaInsets();
+  const webViewRef = useRef(null);
+
+  useEffect(() => {
+    const onBackPress = () => {
+      // ✅ Send back event to Web
+      webViewRef.current?.postMessage(JSON.stringify({ type: 'BACK_BUTTON' }));
+
+      return true; // 🚨 Prevent default exit
+    };
+
+    const subscription = BackHandler.addEventListener(
+      'hardwareBackPress',
+      onBackPress,
+    );
+
+    return () => subscription.remove();
+  }, []);
 
   // const savePdf = async (base64Data, fileName) => {
   //   console.log(base64Data,fileName,'fileName')

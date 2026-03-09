@@ -1,4 +1,4 @@
-package com.kbsutli
+package com.kbjute
 
 import android.app.Application
 import com.facebook.react.PackageList
