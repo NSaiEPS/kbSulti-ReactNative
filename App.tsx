@@ -21,7 +21,12 @@ const WEB_URL = `https://developer.webplanetsoft.com/frontend/`;
 
 const requestStoragePermission = async () => {
   if (Platform.OS === 'android') {
-    await PermissionsAndroid.request(
+    // Android 13+ (API 33+) doesn't need WRITE_EXTERNAL_STORAGE
+    if (Platform.Version >= 33) {
+      return true;
+    }
+
+    const granted = await PermissionsAndroid.request(
       PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE,
       {
         title: 'Storage Permission',
@@ -29,31 +34,10 @@ const requestStoragePermission = async () => {
         buttonPositive: 'OK',
       },
     );
+
+    return granted === PermissionsAndroid.RESULTS.GRANTED;
   }
-};
-
-const downloadPDF = async (url: any) => {
-  await requestStoragePermission();
-
-  const { config, fs } = ReactNativeBlobUtil;
-  const path = fs.dirs.DownloadDir + `/file_${Date.now()}.pdf`;
-
-  config({
-    fileCache: true,
-    path,
-    addAndroidDownloads: {
-      useDownloadManager: true,
-      notification: true,
-      path,
-      description: 'Downloading PDF...',
-    },
-  })
-    .fetch('GET', url)
-    .then(res => {
-      console.log('Saved to:', res.path());
-      Linking.openURL('file://' + res.path());
-    })
-    .catch(console.error);
+  return true;
 };
 
 function App() {
@@ -73,10 +57,8 @@ function AppContent() {
 
   useEffect(() => {
     const onBackPress = () => {
-      // ✅ Send back event to Web
       webViewRef.current?.postMessage(JSON.stringify({ type: 'BACK_BUTTON' }));
-
-      return true; // 🚨 Prevent default exit
+      return true;
     };
 
     const subscription = BackHandler.addEventListener(
@@ -87,89 +69,108 @@ function AppContent() {
     return () => subscription.remove();
   }, []);
 
-  // const savePdf = async (base64Data, fileName) => {
-  //   console.log(base64Data,fileName,'fileName')
-  //   const { fs } = ReactNativeBlobUtil;
-
-  //   const pureBase64 = base64Data.split(",")[1];
-  //   const path = ${fs.dirs.DownloadDir}/${fileName};
-
-  //   await fs.writeFile(path, pureBase64, "base64");
-
-  //   ReactNativeBlobUtil.android.openDocument(path);
-  // };
-
-  const savePdf = async (base64Data, fileName) => {
+  const saveBase64File = async (base64Data, fileName, mimeType) => {
     try {
-      const { fs, android } = ReactNativeBlobUtil;
-
-      // Remove base64 prefix
-      const pureBase64 = base64Data.split(',')[1];
-
-      const path = `${fs.dirs.DownloadDir}/${fileName}`;
-
-      await fs.writeFile(path, pureBase64, 'base64');
-
-      console.log('PDF saved at:', path);
-
-      // ✅ Correct way to open PDF
-      android.actionViewIntent(path, 'application/pdf');
-    } catch (error) {
-      console.log('PDF Save Error:', error);
-    }
-  };
-  const saveExcel1 = async (base64Data, fileName) => {
-    try {
-      const { fs, android } = ReactNativeBlobUtil;
-
-      // Remove base64 prefix
-      const pureBase64 = base64Data.split(',')[1];
-
-      const path = `${fs.dirs.DownloadDir}/${fileName}`;
-
-      await fs.writeFile(path, pureBase64, 'base64');
-
-      console.log('Excel saved at:', path);
-
-      // Open Excel file
-      try {
-        android.actionViewIntent(
-          path,
-          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        );
-      } catch (err) {
-        Alert.alert('Download Complete', 'Excel file downloaded successfully');
+      const hasPermission = await requestStoragePermission();
+      if (!hasPermission) {
+        Alert.alert('Permission Denied', 'Storage permission is required.');
+        return;
       }
-    } catch (error) {
-      console.log('Excel Save Error:', error);
-    }
-  };
 
-  const saveExcel = async (base64Data, fileName) => {
-    try {
-      console.log('Excel base64 length:', base64Data.length);
       const { fs, android } = ReactNativeBlobUtil;
-
       const pureBase64 = base64Data.replace(/^data:.*;base64,/, '');
 
-      const path = `${fs.dirs.DownloadDir}/${fileName}`;
+      // ✅ Public Downloads folder - visible in Files/Downloads app
+      const path = `/storage/emulated/0/Download/${fileName}`;
 
       await fs.writeFile(path, pureBase64, 'base64');
+      console.log('File saved at:', path);
 
-      console.log('Excel saved at:', path);
-
-      android.actionViewIntent(
-        path,
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      Alert.alert(
+        'Download Complete',
+        `File saved in Downloads folder:\n${fileName}`,
+        [
+          { text: 'OK' },
+          {
+            text: 'Open',
+            onPress: () => {
+              android.actionViewIntent(path, mimeType).catch(() => {
+                Alert.alert(
+                  'No App Found',
+                  'No app available to open this file.',
+                );
+              });
+            },
+          },
+        ],
       );
     } catch (error) {
-      console.log('Excel Save Error:', error);
+      console.log('Download error:', error);
+      Alert.alert('Error', `File download failed: ${error.message}`);
+    }
+  };
+
+  const downloadPDF = async url => {
+    try {
+      const hasPermission = await requestStoragePermission();
+      if (!hasPermission) {
+        Alert.alert(
+          'Permission Denied',
+          'Storage permission is required to download files.',
+        );
+        return;
+      }
+
+      const { config, fs, android } = ReactNativeBlobUtil;
+      const fileName = `file_${Date.now()}.pdf`;
+      const path = `${fs.dirs.DownloadDir}/${fileName}`;
+
+      const res = await config({
+        fileCache: true,
+        path,
+        addAndroidDownloads: {
+          useDownloadManager: true,
+          notification: true,
+          path,
+          title: fileName, // <-- ADD title, some devices need it
+          description: 'Downloading PDF...',
+          mime: 'application/pdf',
+          mediaScannable: true, // <-- makes file appear in Downloads app
+        },
+      }).fetch('GET', url);
+
+      console.log('Saved to:', res.path());
+
+      Alert.alert('Download Complete', `PDF saved to Downloads folder.`, [
+        { text: 'OK' },
+        {
+          text: 'Open',
+          onPress: () => {
+            // Use actionViewIntent — more reliable than Linking.openURL for local files
+            android
+              .actionViewIntent(res.path(), 'application/pdf')
+              .catch(() => {
+                Alert.alert(
+                  'No App Found',
+                  'No PDF viewer app found on your device.',
+                );
+              });
+          },
+        },
+      ]);
+    } catch (error) {
+      console.error('PDF download error:', error);
+      Alert.alert(
+        'Download Failed',
+        `Could not download the file: ${error.message}`,
+      );
     }
   };
 
   return (
     <View style={[styles.container, { paddingTop: safeAreaInsets.top }]}>
       <WebView
+        ref={webViewRef}
         source={{ uri: WEB_URL }}
         startInLoadingState
         javaScriptEnabled
@@ -178,15 +179,22 @@ function AppContent() {
           downloadPDF(nativeEvent.downloadUrl);
         }}
         onMessage={event => {
-          console.log(event, 'ddd');
-          const msg = JSON.parse(event.nativeEvent.data);
+          try {
+            const msg = JSON.parse(event.nativeEvent.data);
 
-          if (msg.type === 'PDF_BASE64') {
-            savePdf(msg.data, msg.fileName);
-          }
-          if (msg.type === 'EXCEL_BASE64') {
-            console.log(msg.fileName, msg.data, 'excel');
-            saveExcel(msg.data, msg.fileName);
+            if (msg.type === 'PDF_BASE64') {
+              saveBase64File(msg.data, msg.fileName, 'application/pdf');
+            }
+
+            if (msg.type === 'EXCEL_BASE64') {
+              saveBase64File(
+                msg.data,
+                msg.fileName,
+                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+              );
+            }
+          } catch (e) {
+            console.error('Failed to parse WebView message:', e);
           }
         }}
       />
