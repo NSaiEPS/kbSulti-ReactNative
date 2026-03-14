@@ -1,4 +1,4 @@
-package com.kbsutli
+package com.kbsutliApp
 
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate
