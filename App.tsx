@@ -69,44 +69,112 @@ function AppContent() {
     return () => subscription.remove();
   }, []);
 
+  const requestStoragePermission = async () => {
+    if (Platform.OS !== 'android') return true;
+
+    // Android 13+ doesn't need storage permission
+    if (Platform.Version >= 33) return true;
+
+    // Android 11-12 (API 30-32)
+    if (Platform.Version >= 30) {
+      const granted = await PermissionsAndroid.request(
+        PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE,
+      );
+      return granted === PermissionsAndroid.RESULTS.GRANTED;
+    }
+
+    // Android 10 and below
+    const granted = await PermissionsAndroid.request(
+      PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE,
+      {
+        title: 'Storage Permission',
+        message: 'App needs storage access to download files',
+        buttonPositive: 'OK',
+      },
+    );
+    return granted === PermissionsAndroid.RESULTS.GRANTED;
+  };
+
   const saveBase64File = async (base64Data, fileName, mimeType) => {
     try {
+      if (!base64Data) {
+        Alert.alert('Error', 'No data received');
+        return;
+      }
+
       const hasPermission = await requestStoragePermission();
       if (!hasPermission) {
-        Alert.alert('Permission Denied', 'Storage permission is required.');
+        Alert.alert(
+          'Permission Denied',
+          'Storage permission is required to download files.',
+        );
         return;
       }
 
       const { fs, android } = ReactNativeBlobUtil;
-      const pureBase64 = base64Data.replace(/^data:.*;base64,/, '');
 
-      // ✅ Public Downloads folder - visible in Files/Downloads app
-      const path = `/storage/emulated/0/Download/${fileName}`;
+      const pureBase64 = base64Data.replace(/^data:.*;base64,/, '').trim();
 
-      await fs.writeFile(path, pureBase64, 'base64');
+      if (pureBase64.length === 0) {
+        Alert.alert('Error', 'Base64 data is empty after stripping prefix');
+        return;
+      }
+
+      console.log('Base64 length:', pureBase64.length);
+
+      // ✅ Use ReactNativeBlobUtil DownloadDir - works on all Android versions
+      const downloadDir = fs.dirs.DownloadDir;
+      const path = `${downloadDir}/${fileName}`;
+
+      console.log('Saving to:', path);
+
+      // Check if directory exists
+      const dirExists = await fs.isDir(downloadDir);
+      if (!dirExists) {
+        await fs.mkdir(downloadDir);
+      }
+
+      // For large files use chunked writing
+      if (pureBase64.length > 500000) {
+        const chunkSize = 500000;
+        await fs.writeFile(path, pureBase64.substring(0, chunkSize), 'base64');
+        for (let i = chunkSize; i < pureBase64.length; i += chunkSize) {
+          await fs.appendFile(
+            path,
+            pureBase64.substring(i, i + chunkSize),
+            'base64',
+          );
+        }
+      } else {
+        await fs.writeFile(path, pureBase64, 'base64');
+      }
+
       console.log('File saved at:', path);
 
-      Alert.alert(
-        'Download Complete',
-        `File saved in Downloads folder:\n${fileName}`,
-        [
-          { text: 'OK' },
-          {
-            text: 'Open',
-            onPress: () => {
-              android.actionViewIntent(path, mimeType).catch(() => {
-                Alert.alert(
-                  'No App Found',
-                  'No app available to open this file.',
-                );
-              });
-            },
+      // Scan file so it appears in Downloads app
+      try {
+        await fs.scanFile([{ path, mime: mimeType }]);
+      } catch (scanErr) {
+        console.log('Scan error (non-critical):', scanErr);
+      }
+
+      Alert.alert('Download Complete', `${fileName} saved to Downloads`, [
+        { text: 'OK' },
+        {
+          text: 'Open',
+          onPress: () => {
+            android.actionViewIntent(path, mimeType).catch(() => {
+              Alert.alert(
+                'No App Found',
+                'Install Microsoft Excel or WPS Office to open this file.',
+              );
+            });
           },
-        ],
-      );
+        },
+      ]);
     } catch (error) {
-      console.log('Download error:', error);
-      Alert.alert('Error', `File download failed: ${error.message}`);
+      console.error('Download error:', error);
+      Alert.alert('Error', `Download failed: ${error.message}`);
     }
   };
 
@@ -175,18 +243,45 @@ function AppContent() {
         startInLoadingState
         javaScriptEnabled
         domStorageEnabled
+        scalesPageToFit={false}
+        setSupportMultipleWindows={false}
+        androidHardwareAccelerationDisabled={true}
+        androidLayerType="software"
+        injectedJavaScript={`
+    const meta = document.createElement('meta');
+    meta.setAttribute('name', 'viewport');
+    meta.setAttribute('content', 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no');
+    document.getElementsByTagName('head')[0].appendChild(meta);
+    true;
+  `}
         onFileDownload={({ nativeEvent }) => {
           downloadPDF(nativeEvent.downloadUrl);
         }}
         onMessage={event => {
           try {
-            const msg = JSON.parse(event.nativeEvent.data);
+            let raw = event.nativeEvent.data;
+
+            // Handle double-stringified JSON
+            if (typeof raw === 'string' && raw.startsWith('"')) {
+              raw = JSON.parse(raw); // unwrap outer string
+            }
+            console.log('Raw data:', raw);
+            const msg = typeof raw === 'string' ? JSON.parse(raw) : raw;
+
+            console.log('Message type:', msg.type);
+            console.log('Data length:', msg.data?.length);
+            console.log('Record count:', msg.len);
+            console.log('Initial Record length:', msg.length);
 
             if (msg.type === 'PDF_BASE64') {
               saveBase64File(msg.data, msg.fileName, 'application/pdf');
             }
 
             if (msg.type === 'EXCEL_BASE64') {
+              if (!msg.data || msg.data.length === 0) {
+                Alert.alert('Error', 'Received empty Excel data');
+                return;
+              }
               saveBase64File(
                 msg.data,
                 msg.fileName,
@@ -195,6 +290,10 @@ function AppContent() {
             }
           } catch (e) {
             console.error('Failed to parse WebView message:', e);
+            console.error(
+              'Raw data:',
+              event.nativeEvent.data?.substring(0, 200),
+            );
           }
         }}
       />
