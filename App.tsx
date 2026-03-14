@@ -124,88 +124,76 @@ const requestStoragePermission = async () => {
     return granted === PermissionsAndroid.RESULTS.GRANTED;
   };
 
-  const saveBase64File = async (base64Data, fileName, mimeType) => {
-    try {
-      if (!base64Data) {
-        Alert.alert('Error', 'No data received');
-        return;
-      }
+const saveBase64File = async (base64Data, fileName, mimeType) => {
+  try {
+    const { fs, android } = ReactNativeBlobUtil;
 
-      const hasPermission = await requestStoragePermission();
-      if (!hasPermission) {
-        Alert.alert(
-          'Permission Denied',
-          'Storage permission is required to download files.',
-        );
-        return;
-      }
+    if (!base64Data) {
+      Alert.alert("Error", "No file data received");
+      return;
+    }
 
-      const { fs, android } = ReactNativeBlobUtil;
+    // Remove base64 prefix
+    const pureBase64 = base64Data.replace(/^data:.*;base64,/, "").trim();
 
-      const pureBase64 = base64Data.replace(/^data:.*;base64,/, '').trim();
+    // Public downloads folder
+    const downloadDir = "/storage/emulated/0/Download";
 
-      if (pureBase64.length === 0) {
-        Alert.alert('Error', 'Base64 data is empty after stripping prefix');
-        return;
-      }
+    // Ensure unique file name
+    const finalFileName = `${Date.now()}_${fileName}`;
 
-      console.log('Base64 length:', pureBase64.length);
+    const path = `${downloadDir}/${finalFileName}`;
 
-      // ✅ Use ReactNativeBlobUtil DownloadDir - works on all Android versions
-      const downloadDir = fs.dirs.DownloadDir;
-      const path = `${downloadDir}/${fileName}`;
+    console.log("Saving file to:", path);
 
-      console.log('Saving to:', path);
+    // Ensure directory exists
+    const dirExists = await fs.exists(downloadDir);
+    if (!dirExists) {
+      await fs.mkdir(downloadDir);
+    }
 
-      // Check if directory exists
-      const dirExists = await fs.isDir(downloadDir);
-      if (!dirExists) {
-        await fs.mkdir(downloadDir);
-      }
+    // Save file
+    await fs.writeFile(path, pureBase64, "base64");
 
-      // For large files use chunked writing
-      if (pureBase64.length > 500000) {
-        const chunkSize = 500000;
-        await fs.writeFile(path, pureBase64.substring(0, chunkSize), 'base64');
-        for (let i = chunkSize; i < pureBase64.length; i += chunkSize) {
-          await fs.appendFile(
-            path,
-            pureBase64.substring(i, i + chunkSize),
-            'base64',
-          );
-        }
-      } else {
-        await fs.writeFile(path, pureBase64, 'base64');
-      }
+    // Scan file so Android detects it
+    await fs.scanFile([{ path: path, mime: mimeType }]);
 
-      console.log('File saved at:', path);
+    // Register with Download Manager
+    await android.addCompleteDownload({
+      title: finalFileName,
+      description: "File downloaded",
+      mime: mimeType,
+      path: path,
+      showNotification: true,
+      scannable: true,
+    });
 
-      // Scan file so it appears in Downloads app
-      try {
-        await fs.scanFile([{ path, mime: mimeType }]);
-      } catch (scanErr) {
-        console.log('Scan error (non-critical):', scanErr);
-      }
+    console.log("File saved successfully:", path);
 
-      Alert.alert('Download Complete', `${fileName} saved to Downloads`, [
-        { text: 'OK' },
+    Alert.alert(
+      "Download Complete",
+      `${finalFileName} saved to Downloads folder`,
+      [
+        { text: "OK" },
         {
-          text: 'Open',
+          text: "Open",
           onPress: () => {
             android.actionViewIntent(path, mimeType).catch(() => {
               Alert.alert(
-                'No App Found',
-                'Install Microsoft Excel or WPS Office to open this file.',
+                "No App Found",
+                "Install a compatible app to open this file."
               );
             });
           },
         },
-      ]);
-    } catch (error) {
-      console.error('Download error:', error);
-      Alert.alert('Error', `Download failed: ${error.message}`);
-    }
-  };
+      ]
+    );
+
+  } catch (error) {
+    console.log("Download error:", error);
+    Alert.alert("Download Failed", error.message);
+  }
+};
 
   const downloadPDF = async url => {
     try {
