@@ -1,10 +1,23 @@
 import React, { useEffect, useRef } from 'react';
-import { Linking, StatusBar, StyleSheet, useColorScheme, View, Platform, PermissionsAndroid, BackHandler, Alert } from 'react-native';
-import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
+import {
+  Linking,
+  StatusBar,
+  StyleSheet,
+  useColorScheme,
+  View,
+  Platform,
+  PermissionsAndroid,
+  BackHandler,
+  Alert,
+} from 'react-native';
+import {
+  SafeAreaProvider,
+  useSafeAreaInsets,
+} from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
 import ReactNativeBlobUtil from 'react-native-blob-util';
 
-const WEB_URL = `https://developer.webplanetsoft.com/frontend/`
+const WEB_URL = `https://developer.webplanetsoft.com/frontend/`;
 
 const requestStoragePermission = async () => {
   if (Platform.OS === 'android') {
@@ -14,12 +27,12 @@ const requestStoragePermission = async () => {
         title: 'Storage Permission',
         message: 'App needs access to your storage to download files',
         buttonPositive: 'OK',
-      }
+      },
     );
   }
 };
 
-const downloadPDF = async (url:any) => {
+const downloadPDF = async (url: any) => {
   await requestStoragePermission();
 
   const { config, fs } = ReactNativeBlobUtil;
@@ -36,7 +49,7 @@ const downloadPDF = async (url:any) => {
     },
   })
     .fetch('GET', url)
-    .then((res) => {
+    .then(res => {
       console.log('Saved to:', res.path());
       Linking.openURL('file://' + res.path());
     })
@@ -56,49 +69,47 @@ function App() {
 
 function AppContent() {
   const safeAreaInsets = useSafeAreaInsets();
-const webViewRef = useRef(null);
+  const webViewRef = useRef(null);
+  const webViewReady = useRef(false); // ✅ FIX 1: track when WebView is ready
 
-useEffect(() => {
-  const onBackPress = () => {
+  useEffect(() => {
+    const onBackPress = () => {
+      // ✅ FIX 2: only postMessage when WebView is ready (ref is not null)
+      if (webViewReady.current && webViewRef.current) {
+        webViewRef.current.postMessage(JSON.stringify({ type: 'BACK_BUTTON' }));
+      }
+      return true; // 🚨 Prevent default exit
+    };
 
-    // ✅ Send back event to Web
-    webViewRef.current?.postMessage(
-      JSON.stringify({ type: "BACK_BUTTON" })
+    const subscription = BackHandler.addEventListener(
+      'hardwareBackPress',
+      onBackPress,
     );
 
-    return true; // 🚨 Prevent default exit
+    return () => subscription.remove();
+  }, []);
+
+  const savePdf = async (base64Data, fileName) => {
+    try {
+      const { fs, android } = ReactNativeBlobUtil;
+
+      // Remove base64 prefix
+      const pureBase64 = base64Data.split(',')[1];
+
+      const path = `${fs.dirs.DownloadDir}/${fileName}`;
+
+      await fs.writeFile(path, pureBase64, 'base64');
+
+      console.log('PDF saved at:', path);
+
+      // ✅ Correct way to open PDF
+      android.actionViewIntent(path, 'application/pdf');
+    } catch (error) {
+      console.log('PDF Save Error:', error);
+    }
   };
 
-  const subscription = BackHandler.addEventListener(
-    "hardwareBackPress",
-    onBackPress
-  );
-
-  return () => subscription.remove();
-}, []);
-
-const savePdf = async (base64Data, fileName) => {
-  try {
-    const { fs, android } = ReactNativeBlobUtil;
-
-    // Remove base64 prefix
-    const pureBase64 = base64Data.split(",")[1];
-
-    const path = `${fs.dirs.DownloadDir}/${fileName}`;
-
-    await fs.writeFile(path, pureBase64, "base64");
-
-    console.log("PDF saved at:", path);
-
-    // ✅ Correct way to open PDF
-    android.actionViewIntent(path, "application/pdf");
-
-  } catch (error) {
-    console.log("PDF Save Error:", error);
-  }
-};
-
-const requestStoragePermission = async () => {
+  const requestStoragePermission = async () => {
     if (Platform.OS !== 'android') return true;
 
     // Android 13+ doesn't need storage permission
@@ -124,76 +135,75 @@ const requestStoragePermission = async () => {
     return granted === PermissionsAndroid.RESULTS.GRANTED;
   };
 
-const saveBase64File = async (base64Data, fileName, mimeType) => {
-  try {
-    const { fs, android } = ReactNativeBlobUtil;
+  const saveBase64File = async (base64Data, fileName, mimeType) => {
+    try {
+      const { fs, android } = ReactNativeBlobUtil;
 
-    if (!base64Data) {
-      Alert.alert("Error", "No file data received");
-      return;
-    }
+      if (!base64Data) {
+        Alert.alert('Error', 'No file data received');
+        return;
+      }
 
-    // Remove base64 prefix
-    const pureBase64 = base64Data.replace(/^data:.*;base64,/, "").trim();
+      // Remove base64 prefix
+      const pureBase64 = base64Data.replace(/^data:.*;base64,/, '').trim();
 
-    // Public downloads folder
-    const downloadDir = "/storage/emulated/0/Download";
+      // Public downloads folder
+      const downloadDir = '/storage/emulated/0/Download';
 
-    // Ensure unique file name
-    const finalFileName = `${Date.now()}_${fileName}`;
+      // Ensure unique file name
+      const finalFileName = `${Date.now()}_${fileName}`;
 
-    const path = `${downloadDir}/${finalFileName}`;
+      const path = `${downloadDir}/${finalFileName}`;
 
-    console.log("Saving file to:", path);
+      console.log('Saving file to:', path);
 
-    // Ensure directory exists
-    const dirExists = await fs.exists(downloadDir);
-    if (!dirExists) {
-      await fs.mkdir(downloadDir);
-    }
+      // Ensure directory exists
+      const dirExists = await fs.exists(downloadDir);
+      if (!dirExists) {
+        await fs.mkdir(downloadDir);
+      }
 
-    // Save file
-    await fs.writeFile(path, pureBase64, "base64");
+      // Save file
+      await fs.writeFile(path, pureBase64, 'base64');
 
-    // Scan file so Android detects it
-    await fs.scanFile([{ path: path, mime: mimeType }]);
+      // Scan file so Android detects it
+      await fs.scanFile([{ path: path, mime: mimeType }]);
 
-    // Register with Download Manager
-    await android.addCompleteDownload({
-      title: finalFileName,
-      description: "File downloaded",
-      mime: mimeType,
-      path: path,
-      showNotification: true,
-      scannable: true,
-    });
+      // Register with Download Manager
+      await android.addCompleteDownload({
+        title: finalFileName,
+        description: 'File downloaded',
+        mime: mimeType,
+        path: path,
+        showNotification: true,
+        scannable: true,
+      });
 
-    console.log("File saved successfully:", path);
+      console.log('File saved successfully:', path);
 
-    Alert.alert(
-      "Download Complete",
-      `${finalFileName} saved to Downloads folder`,
-      [
-        { text: "OK" },
-        {
-          text: "Open",
-          onPress: () => {
-            android.actionViewIntent(path, mimeType).catch(() => {
-              Alert.alert(
-                "No App Found",
-                "Install a compatible app to open this file."
-              );
-            });
+      Alert.alert(
+        'Download Complete',
+        `${finalFileName} saved to Downloads folder`,
+        [
+          { text: 'OK' },
+          {
+            text: 'Open',
+            onPress: () => {
+              android.actionViewIntent(path, mimeType).catch(() => {
+                Alert.alert(
+                  'No App Found',
+                  'Install a compatible app to open this file.',
+                );
+              });
+            },
           },
-        },
-      ]
-    );
-
-  } catch (error) {
-    console.log("Download error:", error);
-    Alert.alert("Download Failed", error.message);
-  }
-};
+        ],
+      );
+    } catch (error) {
+      console.log('Download error:', error);
+      Alert.alert('Download Failed', error.message);
+    }
+  };
 
   const downloadPDF = async url => {
     try {
@@ -255,22 +265,19 @@ const saveBase64File = async (base64Data, fileName, mimeType) => {
   return (
     <View style={[styles.container, { paddingTop: safeAreaInsets.top }]}>
       <WebView
+        ref={webViewRef}
         source={{ uri: WEB_URL }}
         startInLoadingState
         javaScriptEnabled
         domStorageEnabled
         allowsFullscreenVideo={false}
+        onLoad={() => {
+          webViewReady.current = true; // ✅ FIX 3: mark ready after page loads
+        }}
         onFileDownload={({ nativeEvent }) => {
           downloadPDF(nativeEvent.downloadUrl);
         }}
-  //         onMessage={(event) => {
-  //   const msg = JSON.parse(event.nativeEvent.data);
-
-  //   if (msg.type === "PDF_BASE64") {
-  //     savePdf(msg.data, msg.fileName);
-  //   }
-  // }}
-  onMessage={event => {
+        onMessage={event => {
           try {
             let raw = event.nativeEvent.data;
 
@@ -300,6 +307,10 @@ const saveBase64File = async (base64Data, fileName, mimeType) => {
                 msg.fileName,
                 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
               );
+            }
+
+            if (msg.type === 'EXIT_APP') {
+              BackHandler.exitApp();
             }
           } catch (e) {
             console.error('Failed to parse WebView message:', e);
