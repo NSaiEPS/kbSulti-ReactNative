@@ -17,7 +17,7 @@ import {
 import { WebView } from 'react-native-webview';
 import ReactNativeBlobUtil from 'react-native-blob-util';
 
-const WEB_URL = `https://developer.webplanetsoft.com/frontend/`;
+const WEB_URL = `https://admin.aryajan.in/`;
 
 const requestStoragePermission = async () => {
   if (Platform.OS === 'android') {
