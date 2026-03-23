@@ -66,7 +66,7 @@ function AppContent() {
   const renderLoadingView = () => (
     <View style={styles.loaderContainer}>
       <Image
-        source={require('./assets/images/ic_launcher-playstore.png')}
+        source={require('./assets/images/kb_jute.webp')}
         style={styles.splashImage}
         resizeMode="contain"
       />
