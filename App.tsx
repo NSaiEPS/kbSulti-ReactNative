@@ -1,6 +1,5 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
-  Linking,
   StatusBar,
   StyleSheet,
   useColorScheme,
@@ -9,6 +8,8 @@ import {
   PermissionsAndroid,
   BackHandler,
   Alert,
+  Image,
+  Animated,
 } from 'react-native';
 import {
   SafeAreaProvider,
@@ -17,48 +18,10 @@ import {
 import { WebView } from 'react-native-webview';
 import ReactNativeBlobUtil from 'react-native-blob-util';
 
-const WEB_URL = `https://admin.aryajan.in/frontend/`;
-
-const requestStoragePermission = async () => {
-  if (Platform.OS === 'android') {
-    await PermissionsAndroid.request(
-      PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE,
-      {
-        title: 'Storage Permission',
-        message: 'App needs access to your storage to download files',
-        buttonPositive: 'OK',
-      },
-    );
-  }
-};
-
-const downloadPDF = async (url: any) => {
-  await requestStoragePermission();
-
-  const { config, fs } = ReactNativeBlobUtil;
-  const path = fs.dirs.DownloadDir + `/file_${Date.now()}.pdf`;
-
-  config({
-    fileCache: true,
-    path,
-    addAndroidDownloads: {
-      useDownloadManager: true,
-      notification: true,
-      path,
-      description: 'Downloading PDF...',
-    },
-  })
-    .fetch('GET', url)
-    .then(res => {
-      console.log('Saved to:', res.path());
-      Linking.openURL('file://' + res.path());
-    })
-    .catch(console.error);
-};
+const WEB_URL = `https://developer.webplanetsoft.com/frontend`;
 
 function App() {
   const isDarkMode = useColorScheme() === 'dark';
-
   return (
     <SafeAreaProvider>
       <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
@@ -70,67 +33,59 @@ function App() {
 function AppContent() {
   const safeAreaInsets = useSafeAreaInsets();
   const webViewRef = useRef(null);
-  const webViewReady = useRef(false); // ✅ FIX 1: track when WebView is ready
+  const webViewReady = useRef(false);
+
+  const [splashDone, setSplashDone] = useState(false);
+  const splashOpacity = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     const onBackPress = () => {
-      // ✅ FIX 2: only postMessage when WebView is ready (ref is not null)
       if (webViewReady.current && webViewRef.current) {
         webViewRef.current.postMessage(JSON.stringify({ type: 'BACK_BUTTON' }));
       }
-      return true; // 🚨 Prevent default exit
+      return true;
     };
-
     const subscription = BackHandler.addEventListener(
       'hardwareBackPress',
       onBackPress,
     );
-
     return () => subscription.remove();
   }, []);
 
-  const savePdf = async (base64Data, fileName) => {
-    try {
-      const { fs, android } = ReactNativeBlobUtil;
-
-      // Remove base64 prefix
-      const pureBase64 = base64Data.split(',')[1];
-
-      const path = `${fs.dirs.DownloadDir}/${fileName}`;
-
-      await fs.writeFile(path, pureBase64, 'base64');
-
-      console.log('PDF saved at:', path);
-
-      // ✅ Correct way to open PDF
-      android.actionViewIntent(path, 'application/pdf');
-    } catch (error) {
-      console.log('PDF Save Error:', error);
-    }
+  const hideLoader = () => {
+    setTimeout(() => {
+      Animated.timing(splashOpacity, {
+        toValue: 0,
+        duration: 400,
+        useNativeDriver: true,
+      }).start(() => setSplashDone(true));
+    }, 500);
   };
+
+  // ✅ Shown inside WebView during native blank gap
+  const renderLoadingView = () => (
+    <View style={styles.loaderContainer}>
+      <Image
+        source={require('./assets/images/ic_launcher-playstore.png')}
+        style={styles.splashImage}
+        resizeMode="contain"
+      />
+    </View>
+  );
+
+  // ---------------- DOWNLOAD + FILE LOGIC ----------------
 
   const requestStoragePermission = async () => {
     if (Platform.OS !== 'android') return true;
-
-    // Android 13+ doesn't need storage permission
     if (Platform.Version >= 33) return true;
-
-    // Android 11-12 (API 30-32)
     if (Platform.Version >= 30) {
       const granted = await PermissionsAndroid.request(
         PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE,
       );
       return granted === PermissionsAndroid.RESULTS.GRANTED;
     }
-
-    // Android 10 and below
     const granted = await PermissionsAndroid.request(
       PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE,
-      {
-        title: 'Storage Permission',
-        message: 'App needs storage access to download files',
-        buttonPositive: 'OK',
-      },
     );
     return granted === PermissionsAndroid.RESULTS.GRANTED;
   };
@@ -138,38 +93,16 @@ function AppContent() {
   const saveBase64File = async (base64Data, fileName, mimeType) => {
     try {
       const { fs, android } = ReactNativeBlobUtil;
-
-      if (!base64Data) {
-        Alert.alert('Error', 'No file data received');
-        return;
-      }
-
-      // Remove base64 prefix
       const pureBase64 = base64Data.replace(/^data:.*;base64,/, '').trim();
-
-      // Public downloads folder
       const downloadDir = '/storage/emulated/0/Download';
-
-      // Ensure unique file name
       const finalFileName = `${Date.now()}_${fileName}`;
-
       const path = `${downloadDir}/${finalFileName}`;
 
-      console.log('Saving file to:', path);
-
-      // Ensure directory exists
       const dirExists = await fs.exists(downloadDir);
-      if (!dirExists) {
-        await fs.mkdir(downloadDir);
-      }
+      if (!dirExists) await fs.mkdir(downloadDir);
 
-      // Save file
       await fs.writeFile(path, pureBase64, 'base64');
-
-      // Scan file so Android detects it
       await fs.scanFile([{ path: path, mime: mimeType }]);
-
-      // Register with Download Manager
       await android.addCompleteDownload({
         title: finalFileName,
         description: 'File downloaded',
@@ -179,28 +112,18 @@ function AppContent() {
         scannable: true,
       });
 
-      console.log('File saved successfully:', path);
-
-      Alert.alert(
-        'Download Complete',
-        `${finalFileName} saved to Downloads folder`,
-        [
-          { text: 'OK' },
-          {
-            text: 'Open',
-            onPress: () => {
-              android.actionViewIntent(path, mimeType).catch(() => {
-                Alert.alert(
-                  'No App Found',
-                  'Install a compatible app to open this file.',
-                );
-              });
-            },
+      Alert.alert('Download Complete', `${finalFileName} saved`, [
+        { text: 'OK' },
+        {
+          text: 'Open',
+          onPress: () => {
+            android.actionViewIntent(path, mimeType).catch(() => {
+              Alert.alert('No App Found');
+            });
           },
-        ],
-      );
+        },
+      ]);
     } catch (error) {
-      console.log('Download error:', error);
       Alert.alert('Download Failed', error.message);
     }
   };
@@ -208,13 +131,7 @@ function AppContent() {
   const downloadPDF = async url => {
     try {
       const hasPermission = await requestStoragePermission();
-      if (!hasPermission) {
-        Alert.alert(
-          'Permission Denied',
-          'Storage permission is required to download files.',
-        );
-        return;
-      }
+      if (!hasPermission) return;
 
       const { config, fs, android } = ReactNativeBlobUtil;
       const fileName = `file_${Date.now()}.pdf`;
@@ -227,100 +144,80 @@ function AppContent() {
           useDownloadManager: true,
           notification: true,
           path,
-          title: fileName, // <-- ADD title, some devices need it
+          title: fileName,
           description: 'Downloading PDF...',
           mime: 'application/pdf',
-          mediaScannable: true, // <-- makes file appear in Downloads app
+          mediaScannable: true,
         },
       }).fetch('GET', url);
 
-      console.log('Saved to:', res.path());
-
-      Alert.alert('Download Complete', `PDF saved to Downloads folder.`, [
+      Alert.alert('Download Complete', 'PDF saved', [
         { text: 'OK' },
         {
           text: 'Open',
           onPress: () => {
-            // Use actionViewIntent — more reliable than Linking.openURL for local files
-            android
-              .actionViewIntent(res.path(), 'application/pdf')
-              .catch(() => {
-                Alert.alert(
-                  'No App Found',
-                  'No PDF viewer app found on your device.',
-                );
-              });
+            android.actionViewIntent(res.path(), 'application/pdf');
           },
         },
       ]);
     } catch (error) {
-      console.error('PDF download error:', error);
-      Alert.alert(
-        'Download Failed',
-        `Could not download the file: ${error.message}`,
-      );
+      Alert.alert('Download Failed', error.message);
     }
   };
 
+  // ---------------- UI ----------------
+
   return (
     <View style={[styles.container, { paddingTop: safeAreaInsets.top }]}>
+      {/* ✅ WebView always fully visible — splash sits on top */}
       <WebView
         ref={webViewRef}
         source={{ uri: WEB_URL }}
-        startInLoadingState
         javaScriptEnabled
         domStorageEnabled
-        allowsFullscreenVideo={false}
+        startInLoadingState={true} // ✅ covers native blank gap
+        renderLoading={renderLoadingView} // ✅ shows your logo inside WebView
         onLoad={() => {
-          webViewReady.current = true; // ✅ FIX 3: mark ready after page loads
+          webViewReady.current = true;
         }}
+        onLoadEnd={hideLoader}
         onFileDownload={({ nativeEvent }) => {
           downloadPDF(nativeEvent.downloadUrl);
         }}
         onMessage={event => {
           try {
-            let raw = event.nativeEvent.data;
-
-            // Handle double-stringified JSON
-            if (typeof raw === 'string' && raw.startsWith('"')) {
-              raw = JSON.parse(raw); // unwrap outer string
-            }
-            console.log('Raw data:', raw);
-            const msg = typeof raw === 'string' ? JSON.parse(raw) : raw;
-
-            console.log('Message type:', msg.type);
-            console.log('Data length:', msg.data?.length);
-            console.log('Record count:', msg.len);
-            console.log('Initial Record length:', msg.length);
-
+            const msg = JSON.parse(event.nativeEvent.data);
             if (msg.type === 'PDF_BASE64') {
               saveBase64File(msg.data, msg.fileName, 'application/pdf');
             }
-
             if (msg.type === 'EXCEL_BASE64') {
-              if (!msg.data || msg.data.length === 0) {
-                Alert.alert('Error', 'Received empty Excel data');
-                return;
-              }
               saveBase64File(
                 msg.data,
                 msg.fileName,
                 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
               );
             }
-
             if (msg.type === 'EXIT_APP') {
               BackHandler.exitApp();
             }
           } catch (e) {
-            console.error('Failed to parse WebView message:', e);
-            console.error(
-              'Raw data:',
-              event.nativeEvent.data?.substring(0, 200),
-            );
+            console.log('Message parse error:', e);
           }
         }}
       />
+
+      {/* ✅ Outer splash — covers app launch & fades out after WebView paints */}
+      {!splashDone && (
+        <Animated.View
+          style={[styles.loaderContainer, { opacity: splashOpacity }]}
+        >
+          <Image
+            source={require('./assets/images/kb_jute.webp')}
+            style={styles.splashImage}
+            resizeMode="contain"
+          />
+        </Animated.View>
+      )}
     </View>
   );
 }
@@ -329,6 +226,17 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#fff',
+  },
+  loaderContainer: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    zIndex: 10,
+  },
+  splashImage: {
+    width: '70%',
+    height: '70%',
   },
 });
 
