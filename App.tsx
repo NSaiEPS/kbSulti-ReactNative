@@ -63,15 +63,15 @@ function AppContent() {
   };
 
   // ✅ Shown inside WebView during native blank gap
-  const renderLoadingView = () => (
-    <View style={styles.loaderContainer}>
-      <Image
-        source={require('./assets/images/kb_jute.webp')}
-        style={styles.splashImage}
-        resizeMode="contain"
-      />
-    </View>
-  );
+  // const renderLoadingView = () => (
+  //   <View style={styles.loaderContainer}>
+  //     <Image
+  //       source={require('./assets/images/kb_jute.webp')}
+  //       style={styles.splashImage}
+  //       resizeMode="contain"
+  //     />
+  //   </View>
+  // );
 
   // ---------------- DOWNLOAD + FILE LOGIC ----------------
 
@@ -170,13 +170,26 @@ function AppContent() {
   return (
     <View style={[styles.container, { paddingTop: safeAreaInsets.top }]}>
       {/* ✅ WebView always fully visible — splash sits on top */}
+
+      {/* ✅ Outer splash — covers app launch & fades out after WebView paints */}
+      {!splashDone && (
+        <Animated.View
+          style={[styles.loaderContainer, { opacity: splashOpacity }]}
+        >
+          <Image
+            source={require('./assets/images/kb_jute.webp')}
+            style={styles.splashImage}
+            resizeMode="contain"
+          />
+        </Animated.View>
+      )}
       <WebView
         ref={webViewRef}
         source={{ uri: WEB_URL }}
         javaScriptEnabled
         domStorageEnabled
         // startInLoadingState={true} // ✅ covers native blank gap
-        renderLoading={renderLoadingView} // ✅ shows your logo inside WebView
+        // renderLoading={renderLoadingView} // ✅ shows your logo inside WebView
         onLoad={() => {
           webViewReady.current = true;
         }}
@@ -205,19 +218,6 @@ function AppContent() {
           }
         }}
       />
-
-      {/* ✅ Outer splash — covers app launch & fades out after WebView paints */}
-      {!splashDone && (
-        <Animated.View
-          style={[styles.loaderContainer, { opacity: splashOpacity }]}
-        >
-          <Image
-            source={require('./assets/images/kb_jute.webp')}
-            style={styles.splashImage}
-            resizeMode="contain"
-          />
-        </Animated.View>
-      )}
     </View>
   );
 }
@@ -235,8 +235,8 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   splashImage: {
-    width: '70%',
-    height: '70%',
+    width: '40%', // ✅ change from 70% to match native splash size
+    height: '40%', // ✅ change from 70% to match native splash size
   },
 });
 
