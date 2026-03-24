@@ -18,7 +18,7 @@ import {
 import { WebView } from 'react-native-webview';
 import ReactNativeBlobUtil from 'react-native-blob-util';
 
-const WEB_URL = `https://developer.webplanetsoft.com/frontend`;
+const WEB_URL = `https://admin.aryajan.in/frontend`;
 
 function App() {
   const isDarkMode = useColorScheme() === 'dark';
@@ -235,8 +235,8 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   splashImage: {
-    width: '40%', // ✅ change from 70% to match native splash size
-    height: '40%', // ✅ change from 70% to match native splash size
+    width: '37%', // ✅ change from 70% to match native splash size
+    height: '37%', // ✅ change from 70% to match native splash size
   },
 });
 
