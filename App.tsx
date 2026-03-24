@@ -175,7 +175,7 @@ function AppContent() {
         source={{ uri: WEB_URL }}
         javaScriptEnabled
         domStorageEnabled
-        startInLoadingState={true} // ✅ covers native blank gap
+        // startInLoadingState={true} // ✅ covers native blank gap
         renderLoading={renderLoadingView} // ✅ shows your logo inside WebView
         onLoad={() => {
           webViewReady.current = true;
