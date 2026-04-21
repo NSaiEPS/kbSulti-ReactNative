@@ -18,7 +18,7 @@ import {
 import { WebView } from 'react-native-webview';
 import ReactNativeBlobUtil from 'react-native-blob-util';
 
-const WEB_URL = `https://admin.aryajan.in/frontend`;
+const WEB_URL = `https://developer.webplanetsoft.com/frontend`;
 
 function App() {
   const isDarkMode = useColorScheme() === 'dark';
@@ -41,6 +41,7 @@ function AppContent() {
   useEffect(() => {
     const onBackPress = () => {
       if (webViewReady.current && webViewRef.current) {
+        console.log('hi');
         webViewRef.current.postMessage(JSON.stringify({ type: 'BACK_BUTTON' }));
       }
       return true;
@@ -198,6 +199,8 @@ function AppContent() {
           downloadPDF(nativeEvent.downloadUrl);
         }}
         onMessage={event => {
+          console.log(event, 'hiii');
+
           try {
             const msg = JSON.parse(event.nativeEvent.data);
             if (msg.type === 'PDF_BASE64') {
@@ -213,6 +216,7 @@ function AppContent() {
             if (msg.type === 'EXIT_APP') {
               BackHandler.exitApp();
             }
+            console.log(event, 'hiii');
           } catch (e) {
             console.log('Message parse error:', e);
           }
