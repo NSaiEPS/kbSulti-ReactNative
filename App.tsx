@@ -18,7 +18,10 @@ import {
 import { WebView } from 'react-native-webview';
 import ReactNativeBlobUtil from 'react-native-blob-util';
 
+// const WEB_URL = `https://admin.aryajan.in/frontend`;
+// const WEB_URL = `https://developer.webplanetsoft.com/frontend`;
 const WEB_URL = `https://admin.aryajan.in/frontend`;
+
 
 function App() {
   const isDarkMode = useColorScheme() === 'dark';
