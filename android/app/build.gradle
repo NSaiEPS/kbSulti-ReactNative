@@ -79,7 +79,7 @@ android {
 
     namespace "com.kbjute"
     defaultConfig {
-        applicationId "com.kbjute"
+        applicationId "com.kbjute.demo"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
